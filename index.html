@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PRISM | Hypervisor Resource Scheduler</title>
+    <meta name="description" content="AI-powered weighted CPU allocation dashboard for virtual machine clusters.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="bg-grid" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--blue" aria-hidden="true"></div>
+    <div class="bg-glow bg-glow--purple" aria-hidden="true"></div>
+
+    <header class="header">
+        <div class="header__badge">
+            <span class="header__badge-dot"></span>
+            SCHEDULER ONLINE
+        </div>
+        <h1 class="header__title">
+            HYPERVISOR<br>
+            <span class="header__title-accent">RESOURCE SCHEDULER</span>
+        </h1>
+        <p class="header__subtitle">AI-Powered Weighted CPU Allocation Engine for Virtual Machine Clusters</p>
+    </header>
+
+    <main class="layout">
+
+        <!-- Step 1: Cluster Configuration -->
+        <section class="panel" id="configPanel">
+            <div class="panel__head">
+                <span class="panel__index">01</span>
+                <h2 class="panel__title">Cluster Configuration</h2>
+            </div>
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label for="vmCount">Number of Virtual Machines</label>
+                    <input type="number" id="vmCount" min="1" max="16" placeholder="e.g. 4" inputmode="numeric">
+                </div>
+                <div class="field-group">
+                    <label for="totalCPU">Total CPU Capacity</label>
+                    <input type="number" id="totalCPU" min="1" placeholder="e.g. 100" inputmode="numeric">
+                </div>
+            </div>
+
+            <p class="field-error" id="configError" hidden></p>
+
+            <button class="btn btn--ghost" id="generateBtn" type="button">
+                <span>Initialize VM Slots</span>
+            </button>
+        </section>
+
+        <!-- Step 2: Per-VM Parameters -->
+        <section class="panel" id="vmPanel" hidden>
+            <div class="panel__head">
+                <span class="panel__index">02</span>
+                <h2 class="panel__title">Virtual Machine Parameters</h2>
+            </div>
+
+            <div class="vm-grid" id="vmGrid"></div>
+
+            <p class="field-error" id="vmError" hidden></p>
+
+            <button class="btn btn--primary" id="runBtn" type="button">
+                <span class="btn__text">Run Allocation Engine</span>
+                <span class="btn__glow"></span>
+            </button>
+        </section>
+
+        <!-- Step 3: Results -->
+        <section class="panel panel--results" id="resultsPanel" hidden>
+            <div class="panel__head">
+                <span class="panel__index">03</span>
+                <h2 class="panel__title">Allocation Report</h2>
+            </div>
+
+            <div class="table-wrap">
+                <table class="result-table">
+                    <thead>
+                        <tr>
+                            <th>VM ID</th>
+                            <th>Weight</th>
+                            <th>CPU Demand</th>
+                            <th>Allocated CPU</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultBody"></tbody>
+                </table>
+            </div>
+
+            <div class="utilization">
+                <div class="utilization__label">
+                    <span>CPU Utilization</span>
+                    <span id="utilPercent">0.0%</span>
+                </div>
+                <div class="utilization__track">
+                    <div class="utilization__fill" id="utilFill"></div>
+                </div>
+            </div>
+
+            <div class="summary-grid" id="summaryGrid"></div>
+
+            <div class="ai-box" id="aiBox">
+                <div class="ai-box__header" id="aiHeader">
+                    <span class="ai-spinner" id="aiSpinner"></span>
+                    <span id="aiStatusText">AI Engine analyzing workload patterns...</span>
+                </div>
+                <div class="ai-box__body" id="aiBody" hidden>
+                    <h3 id="aiTitle"></h3>
+                    <p id="aiMessage"></p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="footer">
+        <span>PRISM SYSTEMS</span>
+        <span class="footer__dot">&middot;</span>
+        <span>Hypervisor Scheduler v2.0</span>
+    </footer>
+
+    <!-- FIXED: Removed src="script.js" - now just script tag -->
+    <script>
+        // ============================================
+        // STATE
+        // ============================================
+
+        let vmCount = 0;
+        let totalCPU = 0;
+        let vmData = [];
+
+        // ============================================
+        // DOM REFS
+        // ============================================
+
+        const vmCountInput = document.getElementById('vmCount');
+        const totalCPUInput = document.getElementById('totalCPU');
+        const generateBtn = document.getElementById('generateBtn');
+        const runBtn = document.getElementById('runBtn');
+
+        const configPanel = document.getElementById('configPanel');
+        const vmPanel = document.getElementById('vmPanel');
+        const resultsPanel = document.getElementById('resultsPanel');
+
+        const vmGrid = document.getElementById('vmGrid');
+        const resultBody = document.getElementById('resultBody');
+        const utilPercent = document.getElementById('utilPercent');
+        const utilFill = document.getElementById('utilFill');
+        const summaryGrid = document.getElementById('summaryGrid');
+
+        const aiBox = document.getElementById('aiBox');
+        const aiSpinner = document.getElementById('aiSpinner');
+        const aiStatusText = document.getElementById('aiStatusText');
+        const aiBody = document.getElementById('aiBody');
+        const aiTitle = document.getElementById('aiTitle');
+        const aiMessage = document.getElementById('aiMessage');
+
+        const configError = document.getElementById('configError');
+        const vmError = document.getElementById('vmError');
+
+        // ============================================
+        // EVENT LISTENERS
+        // ============================================
+
+        generateBtn.addEventListener('click', handleGenerate);
+        runBtn.addEventListener('click', handleRun);
+
+        // Enter key support
+        vmCountInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleGenerate();
+        });
+        totalCPUInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') handleGenerate();
+        });
+
+        // ============================================
+        // HANDLERS
+        // ============================================
+
+        function handleGenerate() {
+            // Get values
+            const count = parseInt(vmCountInput.value);
+            const cpu = parseInt(totalCPUInput.value);
+
+            // Validate
+            configError.hidden = true;
+
+            if (!count || count < 1 || count > 16) {
+                configError.textContent = 'Please enter a valid number of VMs (1-16).';
+                configError.hidden = false;
+                return;
+            }
+
+            if (!cpu || cpu < 1) {
+                configError.textContent = 'Please enter a valid CPU capacity (minimum 1).';
+                configError.hidden = false;
+                return;
+            }
+
+            vmCount = count;
+            totalCPU = cpu;
+
+            // Generate VM inputs
+            generateVMInputs(count);
+            
+            // Show VM panel, hide results
+            vmPanel.hidden = false;
+            resultsPanel.hidden = true;
+            
+            // Scroll to VM panel
+            vmPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function generateVMInputs(count) {
+            vmGrid.innerHTML = '';
+            vmData = [];
+
+            for (let i = 0; i < count; i++) {
+                const defaultDemand = Math.max(1, Math.floor((totalCPU * 0.3) + (i * 5)));
+                const defaultWeight = Math.max(1, 5 + i * 2);
+
+                const card = document.createElement('div');
+                card.className = 'vm-card';
+                card.style.animationDelay = `${i * 0.05}s`;
+                card.innerHTML = `
+                    <div class="vm-card__title">VM ${i + 1}</div>
+                    <div class="field-group">
+                        <label for="demand_${i}">CPU Demand</label>
+                        <input type="number" id="demand_${i}" min="1" value="${defaultDemand}" inputmode="numeric">
+                    </div>
+                    <div class="field-group">
+                        <label for="weight_${i}">Weight</label>
+                        <input type="number" id="weight_${i}" min="1" value="${defaultWeight}" inputmode="numeric">
+                    </div>
+                `;
+                vmGrid.appendChild(card);
+
+                vmData.push({
+                    demand: defaultDemand,
+                    weight: defaultWeight
+                });
+            }
+        }
+
+        function handleRun() {
+            // Collect VM data from inputs
+            const demands = [];
+            const weights = [];
+            let totalWeight = 0;
+            let totalDemand = 0;
+
+            for (let i = 0; i < vmCount; i++) {
+                const demandInput = document.getElementById(`demand_${i}`);
+                const weightInput = document.getElementById(`weight_${i}`);
+
+                const demand = parseInt(demandInput.value);
+                const weight = parseInt(weightInput.value);
+
+                // Validate each VM
+                if (!demand || demand < 1) {
+                    vmError.textContent = `VM ${i + 1}: Please enter a valid CPU demand (minimum 1).`;
+                    vmError.hidden = false;
+                    return;
+                }
+
+                if (!weight || weight < 1) {
+                    vmError.textContent = `VM ${i + 1}: Please enter a valid weight (minimum 1).`;
+                    vmError.hidden = false;
+                    return;
+                }
+
+                demands.push(demand);
+                weights.push(weight);
+                totalWeight += weight;
+                totalDemand += demand;
+            }
+
+            vmError.hidden = true;
+
+            // Calculate allocation
+            const allocated = [];
+            let usedCPU = 0;
+
+            for (let i = 0; i < vmCount; i++) {
+                let alloc = Math.floor((weights[i] * totalCPU) / totalWeight);
+                if (alloc > demands[i]) {
+                    alloc = demands[i];
+                }
+                allocated.push(alloc);
+                usedCPU += alloc;
+            }
+
+            // Display results
+            displayResults(totalCPU, totalWeight, totalDemand, demands, weights, allocated, usedCPU);
+            
+            // Show results panel
+            resultsPanel.hidden = false;
+            
+            // Scroll to results
+            setTimeout(() => {
+                resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
+
+        // ============================================
+        // DISPLAY RESULTS
+        // ============================================
+
+        function displayResults(totalCPU, totalWeight, totalDemand, demands, weights, allocated, usedCPU) {
+            // Table
+            resultBody.innerHTML = '';
+            
+            const utilization = (usedCPU / totalCPU) * 100;
+            
+            for (let i = 0; i < vmCount; i++) {
+                const alloc = allocated[i];
+                const demand = demands[i];
+                const isMet = alloc >= demand;
+                const statusClass = isMet ? 'status-badge--met' : 'status-badge--under';
+                const statusText = isMet ? '✓ Met' : '⚠ Under';
+                
+                const row = document.createElement('tr');
+                row.style.animationDelay = `${i * 0.06}s`;
+                row.innerHTML = `
+                    <td>VM ${i + 1}</td>
+                    <td>${weights[i]}</td>
+                    <td>${demand}</td>
+                    <td>${alloc}</td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                `;
+                resultBody.appendChild(row);
+            }
+
+            // Utilization bar
+            const utilPercentValue = Math.min(utilization, 100);
+            utilPercent.textContent = utilPercentValue.toFixed(1) + '%';
+            utilFill.style.width = utilPercentValue + '%';
+            
+            // Color change for overload
+            if (utilization > 90) {
+                utilFill.classList.add('utilization__fill--overloaded');
+            } else {
+                utilFill.classList.remove('utilization__fill--overloaded');
+            }
+
+            // Summary cards
+            summaryGrid.innerHTML = `
+                <div class="summary-card">
+                    <div class="summary-card__label">Total CPU</div>
+                    <div class="summary-card__value">${totalCPU}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card__label">Total Weight</div>
+                    <div class="summary-card__value">${totalWeight}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card__label">Total Demand</div>
+                    <div class="summary-card__value">${totalDemand}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card__label">Used CPU</div>
+                    <div class="summary-card__value">${usedCPU}</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-card__label">Unused CPU</div>
+                    <div class="summary-card__value">${totalCPU - usedCPU}</div>
+                </div>
+            `;
+
+            // AI Analysis with animation
+            simulateAIAnalysis(totalDemand, totalCPU, usedCPU, totalCPU);
+        }
+
+        // ============================================
+        // AI ANALYSIS (with animation)
+        // ============================================
+
+        function simulateAIAnalysis(totalDemand, totalCPU, usedCPU, capacity) {
+            // Show loading state
+            aiSpinner.hidden = false;
+            aiStatusText.textContent = 'AI Engine analyzing workload patterns...';
+            aiBody.hidden = true;
+            aiBox.className = 'ai-box';
+
+            // Simulate AI processing
+            setTimeout(() => {
+                aiSpinner.hidden = true;
+                aiStatusText.textContent = 'Analysis complete.';
+                aiBody.hidden = false;
+
+                const utilization = (usedCPU / capacity) * 100;
+                const isOverloaded = totalDemand > totalCPU;
+
+                if (isOverloaded) {
+                    aiBox.className = 'ai-box ai-box--warn';
+                    aiTitle.textContent = '⚠️ High CPU Load Detected';
+                    aiMessage.innerHTML = `
+                        <strong>Issue:</strong> Total demand (${totalDemand}) exceeds capacity (${totalCPU}) by ${totalDemand - totalCPU} units.<br>
+                        <strong>Recommendation:</strong> Increase CPU capacity or reduce active VMs.
+                    `;
+                } else if (utilization > 85) {
+                    aiBox.className = 'ai-box ai-box--warn';
+                    aiTitle.textContent = '⚠️ High Utilization Warning';
+                    aiMessage.innerHTML = `
+                        <strong>Status:</strong> CPU utilization at ${utilization.toFixed(1)}%<br>
+                        <strong>Recommendation:</strong> Consider scaling up capacity soon for optimal performance.
+                    `;
+                } else {
+                    aiBox.className = 'ai-box ai-box--ok';
+                    aiTitle.textContent = '✅ System Running Optimally';
+                    aiMessage.innerHTML = `
+                        <strong>Status:</strong> All resources allocated efficiently.<br>
+                        Remaining capacity: ${(capacity - usedCPU)} units (${((capacity - usedCPU) / capacity * 100).toFixed(1)}% free)
+                    `;
+                }
+            }, 1200);
+        }
+
+        // ============================================
+        // RESET FUNCTION
+        // ============================================
+
+        function resetScheduler() {
+            vmCountInput.value = '';
+            totalCPUInput.value = '';
+            vmPanel.hidden = true;
+            resultsPanel.hidden = true;
+            configError.hidden = true;
+            vmError.hidden = true;
+            vmGrid.innerHTML = '';
+            resultBody.innerHTML = '';
+            utilPercent.textContent = '0.0%';
+            utilFill.style.width = '0%';
+            summaryGrid.innerHTML = '';
+            aiBody.hidden = true;
+            aiBox.className = 'ai-box';
+            aiSpinner.hidden = true;
+            aiStatusText.textContent = 'AI Engine ready.';
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Expose reset function to global scope
+        window.resetScheduler = resetScheduler;
+
+        // ============================================
+        // KEYBOARD SHORTCUTS
+        // ============================================
+
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Enter to run
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (!vmPanel.hidden) {
+                    handleRun();
+                } else {
+                    handleGenerate();
+                }
+            }
+        });
+
+        console.log('%c✦ PRISM Hypervisor Scheduler Loaded ✦', 
+            'color: #9b5cff; font-size: 16px; font-weight: bold;');
+        console.log('%cInfovative Technology Solutions', 
+            'color: #7d9bff; font-size: 12px;');
+    </script>
+</body>
+</html>
